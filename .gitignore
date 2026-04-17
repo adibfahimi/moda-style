@@ -1,0 +1,38 @@
+# Environment files with secrets
+.env
+.env.local
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work.sum
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build outputs
+/services/*/auth-service
+/services/*/product-service
+/services/*/order-service
+tmp/
+dist/
+
+# Database
+*.db
+*.sqlite
+
+# Logs
+*.log

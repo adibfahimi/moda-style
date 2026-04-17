@@ -1,0 +1,11 @@
+go 1.24.0
+
+use (
+	.
+	./common
+	./services/auth-service
+	./services/cart-service
+	./services/order-service
+	./services/product-service
+	./services/admin-service
+)
