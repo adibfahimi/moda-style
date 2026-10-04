@@ -1,3 +1,12 @@
+/**
+ * Payment service — card payments behind a single façade.
+ *
+ * The gateway is chosen once, at import time: without
+ * `VITE_PAYMENT_SERVICE_URL` a local mock gateway simulates Stripe (delays
+ * included, test card `4000 0000 0000 0002` always declines), otherwise the
+ * calls are proxied to the payment service HTTP API.
+ */
+
 export interface PaymentIntent {
   id: string;
   amount: number;

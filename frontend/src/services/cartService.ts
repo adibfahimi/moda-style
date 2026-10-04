@@ -1,7 +1,14 @@
 import { API_CONFIG, getAuthHeaders } from '../config/api';
 import type { CartResponse, AddToCartRequest, UpdateCartItemRequest, WishlistResponse } from '../types';
 
+/**
+ * Cart service — the signed-in shopper's cart and wishlist.
+ *
+ * Every request carries the bearer token, so callers are expected to be
+ * authenticated; failures surface the backend message when there is one.
+ */
 export const cartService = {
+  /** Returns the cart contents together with the subtotal and item count. */
   async getCart(): Promise<CartResponse> {
     const response = await fetch(`${API_CONFIG.CART_SERVICE}/api/v1/cart`, {
       headers: getAuthHeaders(),

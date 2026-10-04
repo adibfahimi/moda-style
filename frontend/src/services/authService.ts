@@ -1,7 +1,19 @@
 import { API_CONFIG, getAuthHeaders } from '../config/api';
 import type { LoginRequest, RegisterRequest, AuthResponse, User, UpdateProfileRequest } from '../types';
 
+/**
+ * Authentication service — thin wrapper around the auth-service HTTP API.
+ *
+ * Successful `register` and `login` calls persist the returned JWT under the
+ * `token` key of `localStorage`, which is exactly what {@link getAuthHeaders}
+ * reads back for authenticated requests.
+ */
 export const authService = {
+  /**
+   * Creates an account and stores the returned JWT.
+   *
+   * @throws Error with the backend message, or `Registration failed`.
+   */
   async register(data: RegisterRequest): Promise<AuthResponse> {
     const response = await fetch(`${API_CONFIG.AUTH_SERVICE}/api/v1/auth/register`, {
       method: 'POST',
@@ -21,6 +33,11 @@ export const authService = {
     return result;
   },
 
+  /**
+   * Signs in and stores the returned JWT.
+   *
+   * @throws Error with the backend message, or `Login failed`.
+   */
   async login(data: LoginRequest): Promise<AuthResponse> {
     const response = await fetch(`${API_CONFIG.AUTH_SERVICE}/api/v1/auth/login`, {
       method: 'POST',
@@ -40,6 +57,13 @@ export const authService = {
     return result;
   },
 
+  /**
+   * Returns the signed-in user.
+   *
+   * The thrown error carries the HTTP `status`, so callers can distinguish an
+   * expired session (401) from a server fault; a non-JSON body falls back to a
+   * generic message.
+   */
   async getProfile(): Promise<User> {
     const response = await fetch(`${API_CONFIG.AUTH_SERVICE}/api/v1/auth/profile`, {
       headers: getAuthHeaders(),
@@ -63,6 +87,7 @@ export const authService = {
     return data.user;
   },
 
+  /** Patches the current profile and returns the updated user. */
   async updateProfile(data: UpdateProfileRequest): Promise<User> {
     const response = await fetch(`${API_CONFIG.AUTH_SERVICE}/api/v1/auth/profile`, {
       method: 'PATCH',
@@ -79,6 +104,7 @@ export const authService = {
     return result.user;
   },
 
+  /** Requests a password-reset e-mail for the given address. */
   async resetPassword(email: string): Promise<void> {
     const response = await fetch(`${API_CONFIG.AUTH_SERVICE}/api/v1/auth/reset-password`, {
       method: 'POST',
@@ -92,10 +118,12 @@ export const authService = {
     }
   },
 
+  /** Drops the stored JWT, signing the local session out. */
   logout() {
     localStorage.removeItem('token');
   },
 
+  /** @returns `true` when a JWT is present in `localStorage`. */
   isAuthenticated(): boolean {
     return !!localStorage.getItem('token');
   },

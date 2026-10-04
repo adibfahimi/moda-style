@@ -1,7 +1,17 @@
 import { API_CONFIG, getAuthHeaders } from '../config/api';
 import type { Product, Category, Review, CreateReviewRequest } from '../types';
 
-// Export listCategories as a standalone function
+/**
+ * Product catalogue service — read access to products, categories and reviews,
+ * plus review creation for signed-in shoppers.
+ */
+
+/**
+ * Lists every category.
+ *
+ * Standalone counterpart of {@link productService.listCategories}; the storefront
+ * navigation imports it directly.
+ */
 export const listCategories = async (): Promise<Category[]> => {
   const response = await fetch(`${API_CONFIG.PRODUCT_SERVICE}/api/v1/categories`);
 

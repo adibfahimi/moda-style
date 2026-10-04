@@ -23,9 +23,10 @@ export interface ProcessPaymentResponse {
 }
 
 /**
- * Order Service
- * 
- * This service handles all order-related API calls with the backend order service.
+ * Order service — checkout, payment and order history.
+ *
+ * The API lives on its own service (see `docker-compose.yml`); order creation
+ * turns the server-side cart of the signed-in user into an order.
  */
 export const orderService = {
   /**

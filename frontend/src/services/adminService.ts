@@ -1,3 +1,11 @@
+/**
+ * Admin service — every call the back-office makes, grouped by resource.
+ *
+ * All helpers take/return plain JSON, attach the bearer token via
+ * {@link getAuthHeaders} and reject with a `Failed to …` message that mirrors
+ * the operation, since the admin API answers non-2xx without a body.
+ */
+
 import { API_CONFIG, getAuthHeaders } from '../config/api';
 
 const BASE_URL = `${API_CONFIG.ADMIN_SERVICE}/api/v1/admin`;
