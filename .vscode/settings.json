@@ -1,0 +1,23 @@
+{
+  // Use the TypeScript installed by Bun, so the editor matches `bun run
+  // typecheck` and CI. Accept the one-time prompt, or run
+  // "TypeScript: Select TypeScript Version" → "Use Workspace Version".
+  "typescript.tsdk": "frontend/node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+
+  // Tailwind v4 uses at-rules the built-in CSS service does not know about
+  // (`@plugin`, `@theme`, `@utility`). The Tailwind CSS IntelliSense extension
+  // understands them; this keeps the Problems panel clean without it.
+  "css.lint.unknownAtRules": "ignore",
+
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/go.work.sum": true
+  },
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/frontend/dist/**": true,
+    "**/.git/objects/**": true
+  }
+}

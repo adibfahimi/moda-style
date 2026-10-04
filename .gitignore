@@ -13,7 +13,10 @@
 go.work.sum
 
 # IDE
-.vscode/
+# `.vscode/` stays personal; only the shared workspace files are tracked.
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
 .idea/
 *.swp
 *.swo

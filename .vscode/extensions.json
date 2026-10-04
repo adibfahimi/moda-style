@@ -1,0 +1,8 @@
+{
+  "recommendations": [
+    "bradlc.vscode-tailwindcss",
+    "golang.go",
+    "vitest.explorer",
+    "editorconfig.editorconfig"
+  ]
+}

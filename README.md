@@ -159,6 +159,23 @@ bun run typecheck  # tsc --build
 In development the frontend talks to the services directly on `localhost:800x`
 (see `frontend/src/config/api.ts`).
 
+### Editor setup
+
+Open the **repository root** so the Go workspace (`go.work`) and the SPA's
+`frontend/tsconfig.json` are both picked up. `.vscode/extensions.json` lists the
+recommended extensions, and `.vscode/settings.json` points the editor at the
+TypeScript version installed by Bun — accept the one-time "Use Workspace
+Version" prompt so the editor agrees with `bun run typecheck` and CI.
+
+If the Problems panel ever shows TypeScript syntax errors (`',' expected`,
+`Declaration or statement expected`) that `bun run typecheck` does not
+reproduce, the language service is holding a stale buffer — this happens when
+files change on disk outside the editor. Run **TypeScript: Restart TS Server**
+(or reload the window) and the phantom errors disappear; `.vscode/settings.json`
+also silences the one legitimate warning, the Tailwind v4 `@plugin` at-rule in
+`frontend/src/index.css`, which only the Tailwind CSS IntelliSense extension
+fully understands.
+
 ---
 
 ## Service catalogue
