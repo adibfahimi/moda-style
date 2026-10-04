@@ -6,6 +6,9 @@ import (
 	"github.com/adibfahimi/moda-style/services/cart-service/models"
 )
 
+// Migrate creates or updates the cart and wishlist tables through gorm
+// AutoMigrate. It runs on startup right after Connect and exits the process on
+// failure so a schema mismatch never serves traffic silently.
 func Migrate() {
 	err := DB.AutoMigrate(
 		&models.CartItem{},

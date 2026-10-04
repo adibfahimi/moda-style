@@ -1,3 +1,9 @@
+// Package handlers implements the cart and wishlist HTTP surface.
+//
+// Every route is mounted behind common.RequireAuth, so handlers read the caller
+// from c.Locals("userID") and return 401 when it is missing. Cart items are
+// stored in this service's tables, while product and size details are read from
+// the products/sizes tables that live in the shared database.
 package handlers
 
 import (
@@ -9,16 +15,25 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
+// AddToCartRequest is the payload accepted by AddToCart.
 type AddToCartRequest struct {
 	ProductID uint `json:"product_id" validate:"required"`
 	SizeID    uint `json:"size_id" validate:"required"`
 	Quantity  int  `json:"quantity" validate:"required,min=1"`
 }
 
+// UpdateCartItemRequest is the payload accepted by UpdateCartItem.
 type UpdateCartItemRequest struct {
 	Quantity int `json:"quantity" validate:"required,min=1"`
 }
 
+// GetCart returns the authenticated user's cart with product details, the
+// subtotal and the number of distinct lines.
+//
+// Product name, image and price plus the selected size, colour and remaining
+// stock are resolved per item, so the cart can be rendered without extra calls.
+// Items whose product or size row has disappeared keep zero values rather than
+// failing the whole request.
 func GetCart(c *fiber.Ctx) error {
 	userID, ok := c.Locals("userID").(uint)
 	if !ok {
@@ -75,6 +90,13 @@ func GetCart(c *fiber.Ctx) error {
 	})
 }
 
+// AddToCart adds a size variant to the cart, or increases the quantity when the
+// same product/size pair is already present.
+//
+// It validates the payload, resolves the size to check that it exists, belongs
+// to the requested product and has enough stock, then either merges the
+// quantity into the existing line or creates a new one. Responses are 201 for a
+// new line and 200 when an existing line was updated.
 func AddToCart(c *fiber.Ctx) error {
 	userID, ok := c.Locals("userID").(uint)
 	if !ok {
@@ -141,6 +163,11 @@ func AddToCart(c *fiber.Ctx) error {
 	})
 }
 
+// UpdateCartItem sets the absolute quantity of one of the caller's cart lines.
+//
+// The item must belong to the authenticated user, and the requested quantity
+// must not exceed the stock of its size variant. Unknown or foreign IDs return
+// 404 so a user cannot probe other carts.
 func UpdateCartItem(c *fiber.Ctx) error {
 	userID, ok := c.Locals("userID").(uint)
 	if !ok {
@@ -180,6 +207,8 @@ func UpdateCartItem(c *fiber.Ctx) error {
 	})
 }
 
+// RemoveFromCart deletes one of the caller's cart lines, returning 404 when the
+// ID does not exist or belongs to another user.
 func RemoveFromCart(c *fiber.Ctx) error {
 	userID, ok := c.Locals("userID").(uint)
 	if !ok {
@@ -201,6 +230,8 @@ func RemoveFromCart(c *fiber.Ctx) error {
 	})
 }
 
+// ClearCart removes every cart line of the authenticated user. It is
+// idempotent: clearing an already empty cart still returns 200.
 func ClearCart(c *fiber.Ctx) error {
 	userID, ok := c.Locals("userID").(uint)
 	if !ok {
@@ -216,6 +247,8 @@ func ClearCart(c *fiber.Ctx) error {
 	})
 }
 
+// GetWishlist returns the authenticated user's wishlist with product details and
+// a computed InStock flag driven by the summed stock of all size variants.
 func GetWishlist(c *fiber.Ctx) error {
 	userID, ok := c.Locals("userID").(uint)
 	if !ok {
@@ -257,6 +290,12 @@ func GetWishlist(c *fiber.Ctx) error {
 	})
 }
 
+// ToggleWishlistItem adds the product to the caller's wishlist when absent and
+// removes it when present.
+//
+// The response always carries a "wishlisted" boolean so the client can update
+// its button state: 201 for an add, 200 for a removal. Unknown product IDs
+// return 404 before any write happens.
 func ToggleWishlistItem(c *fiber.Ctx) error {
 	userID, ok := c.Locals("userID").(uint)
 	if !ok {
@@ -285,7 +324,7 @@ func ToggleWishlistItem(c *fiber.Ctx) error {
 			return common.SendErrorResponse(c, fiber.StatusInternalServerError, "Failed to remove from wishlist")
 		}
 		return common.SendSuccessResponse(c, fiber.StatusOK, fiber.Map{
-			"message":   "Removed from wishlist",
+			"message":    "Removed from wishlist",
 			"wishlisted": false,
 		})
 	}
@@ -301,8 +340,8 @@ func ToggleWishlistItem(c *fiber.Ctx) error {
 	}
 
 	return common.SendSuccessResponse(c, fiber.StatusCreated, fiber.Map{
-		"message":   "Added to wishlist",
+		"message":    "Added to wishlist",
 		"wishlisted": true,
-		"item":      wishlistItem,
+		"item":       wishlistItem,
 	})
 }
