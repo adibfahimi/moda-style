@@ -667,7 +667,7 @@ export default function AdminProducts() {
                                   value={variant().size}
                                   onInput={(e) =>
                                     updateVariantField(
-                                      index(),
+                                      index,
                                       "size",
                                       e.currentTarget.value,
                                     )
@@ -685,7 +685,7 @@ export default function AdminProducts() {
                                   value={variant().color}
                                   onInput={(e) =>
                                     updateVariantField(
-                                      index(),
+                                      index,
                                       "color",
                                       e.currentTarget.value,
                                     )
@@ -704,7 +704,7 @@ export default function AdminProducts() {
                                   value={variant().stock}
                                   onInput={(e) =>
                                     updateVariantField(
-                                      index(),
+                                      index,
                                       "stock",
                                       Number(e.currentTarget.value),
                                     )
@@ -715,7 +715,7 @@ export default function AdminProducts() {
                                 <button
                                   type="button"
                                   class="btn btn-error btn-sm w-full"
-                                  onClick={() => removeVariantRow(index())}
+                                  onClick={() => removeVariantRow(index)}
                                   disabled={variants().length === 1}
                                 >
                                   Remove

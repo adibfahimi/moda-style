@@ -71,10 +71,14 @@ export default function Products() {
   );
 
   createEffect(() => {
-    const category = searchParams.category?.trim() || "";
-    const search = searchParams.search?.trim() || "";
-    const min = searchParams.minPrice?.trim() || "";
-    const max = searchParams.maxPrice?.trim() || "";
+    // `useSearchParams` types values as `string | string[]`, so normalise first.
+    const readParam = (value?: string | string[]) =>
+      (Array.isArray(value) ? value[0] ?? "" : value ?? "").trim();
+
+    const category = readParam(searchParams.category);
+    const search = readParam(searchParams.search);
+    const min = readParam(searchParams.minPrice);
+    const max = readParam(searchParams.maxPrice);
 
     setSearchQuery(search);
     setMinPrice(min === "" ? undefined : Number(min));
