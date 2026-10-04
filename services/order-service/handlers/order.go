@@ -1,3 +1,11 @@
+// Package handlers implements the order lifecycle of the store: checkout from
+// the cart, payment processing, order history and cancellation.
+//
+// Every route runs behind common.RequireAuth, so handlers read the caller from
+// c.Locals("userID") and return 401 when it is missing. Orders are stored in the
+// order tables while the cart and product/size data are read from the shared
+// database, which is also where stock is decremented after a successful
+// payment. Payments are simulated: no Stripe call is made yet.
 package handlers
 
 import (
@@ -10,7 +18,8 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// CartItem structure from cart service (to read cart data)
+// CartItem mirrors the cart lines of the cart service that this service reads
+// directly from the shared database during checkout.
 type CartItem struct {
 	ID        uint    `json:"id"`
 	ProductID uint    `json:"product_id"`
@@ -34,8 +43,15 @@ type ProcessPaymentRequest struct {
 	PaymentIntentID string `json:"payment_intent_id"`
 }
 
-// CreateOrder creates a new order from the user's cart
-// This simulates the order creation process that would integrate with Stripe
+// CreateOrder turns the authenticated user's cart into an order.
+//
+// The shipping address is mandatory and the payment method defaults to "card".
+// For every cart line the matching product and size are loaded from the shared
+// database; a missing product or insufficient stock aborts the checkout with
+// 400 before anything is written. The order is created with status and payment
+// status "pending", a generated order number and one OrderItem per cart line,
+// and returned with its items preloaded. The cart is only emptied later, once
+// the payment succeeds.
 func CreateOrder(c *fiber.Ctx) error {
 	userID, ok := c.Locals("userID").(uint)
 	if !ok {
@@ -178,8 +194,13 @@ func CreateOrder(c *fiber.Ctx) error {
 	})
 }
 
-// ProcessPayment processes the payment for an order
-// This simulates Stripe payment processing - replace with real Stripe integration later
+// ProcessPayment settles an order with a (simulated) payment intent.
+//
+// The order must belong to the caller and must not be paid yet. A simulated
+// transaction row is written for both outcomes: on success the order moves to
+// "processing"/"paid", the stock of every ordered size is decremented and the
+// user's cart is emptied; on decline the order is marked "failed" and returned
+// with 400. No real Stripe request is made yet.
 func ProcessPayment(c *fiber.Ctx) error {
 	userID, ok := c.Locals("userID").(uint)
 	if !ok {
@@ -279,7 +300,8 @@ func ProcessPayment(c *fiber.Ctx) error {
 	})
 }
 
-// GetMyOrders retrieves all orders for the authenticated user
+// GetMyOrders returns every order of the authenticated user, newest first, with
+// their items preloaded. The response is a bare JSON array.
 func GetMyOrders(c *fiber.Ctx) error {
 	userID, ok := c.Locals("userID").(uint)
 	if !ok {
@@ -297,7 +319,8 @@ func GetMyOrders(c *fiber.Ctx) error {
 	return c.JSON(orders)
 }
 
-// GetOrderByID retrieves a specific order by ID
+// GetOrderByID returns one order with its items. Orders of other users are
+// reported as 404 so the endpoint cannot be used to enumerate foreign orders.
 func GetOrderByID(c *fiber.Ctx) error {
 	userID, ok := c.Locals("userID").(uint)
 	if !ok {
@@ -315,7 +338,12 @@ func GetOrderByID(c *fiber.Ctx) error {
 	return c.JSON(order)
 }
 
-// CancelOrder cancels an order if it's still in pending status
+// CancelOrder cancels one of the caller's orders.
+//
+// Only "pending" and "processing" orders can be cancelled; anything further
+// along the pipeline returns 400. Cancelling a paid order also marks it
+// "refunded" and puts the reserved stock back into the sizes table. The Stripe
+// refund call is still a TODO.
 func CancelOrder(c *fiber.Ctx) error {
 	userID, ok := c.Locals("userID").(uint)
 	if !ok {
@@ -357,34 +385,44 @@ func CancelOrder(c *fiber.Ctx) error {
 
 // Helper functions
 
+// generateOrderNumber builds a human readable, collision-resistant order number
+// of the form ORD-<unix seconds>-<6 random digits>.
 func generateOrderNumber() string {
 	timestamp := time.Now().Unix()
 	random := rand.Intn(999999)
 	return fmt.Sprintf("ORD-%d-%06d", timestamp, random)
 }
 
-// simulatePaymentProcessing simulates Stripe payment processing
-// In production, replace this with real Stripe API call
+// simulatePaymentProcessing stands in for the Stripe API.
+//
+// A payment intent whose last ten characters are the well known Stripe decline
+// suffix "0000000002" is always declined; every other intent succeeds. The
+// outcome is deliberately deterministic so the demo behaves predictably and the
+// payment flow can be tested; swap this function for a real Stripe call later.
 func simulatePaymentProcessing(paymentIntentID string) bool {
 	// Check if it's a test decline payment intent
 	if len(paymentIntentID) > 10 && paymentIntentID[len(paymentIntentID)-10:] == "0000000002" {
 		return false // Simulate decline
 	}
 
-	// Simulate 90% success rate for other cards
-	return rand.Float32() > 0.1
+	return true
 }
 
+// decreaseProductStock subtracts the ordered quantity from every size variant of
+// the order, guarded by `stock >= quantity` so a concurrent order can never
+// push stock below zero. Items without a size ID (for example gift cards) are
+// skipped.
+//
+// Items are loaded into a local slice when the caller has not preloaded them, so
+// the passed order (and any unsaved changes on it) is never overwritten.
 func decreaseProductStock(order *models.Order) error {
-	// Load order items if not loaded
-	if len(order.Items) == 0 {
-		if err := database.DB.Preload("Items").First(order, order.ID).Error; err != nil {
-			return err
-		}
+	items, err := orderItems(order)
+	if err != nil {
+		return err
 	}
 
 	// Decrease stock for each item
-	for _, item := range order.Items {
+	for _, item := range items {
 		if item.SizeID == nil {
 			continue
 		}
@@ -400,16 +438,17 @@ func decreaseProductStock(order *models.Order) error {
 	return nil
 }
 
+// restoreProductStock gives back the quantity of every size variant of a
+// cancelled order. It is the counterpart of decreaseProductStock and is used
+// when a paid order is refunded.
 func restoreProductStock(order *models.Order) error {
-	// Load order items if not loaded
-	if len(order.Items) == 0 {
-		if err := database.DB.Preload("Items").First(order, order.ID).Error; err != nil {
-			return err
-		}
+	items, err := orderItems(order)
+	if err != nil {
+		return err
 	}
 
 	// Restore stock for each item
-	for _, item := range order.Items {
+	for _, item := range items {
 		if item.SizeID == nil {
 			continue
 		}
@@ -425,8 +464,23 @@ func restoreProductStock(order *models.Order) error {
 	return nil
 }
 
+// orderItems returns the items of an order, reading them from the database when
+// the caller passes an order without preloaded items.
+func orderItems(order *models.Order) ([]models.OrderItem, error) {
+	if len(order.Items) > 0 {
+		return order.Items, nil
+	}
+
+	var items []models.OrderItem
+	if err := database.DB.Where("order_id = ?", order.ID).Find(&items).Error; err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+// clearUserCart empties the cart of one user once their payment succeeded. The
+// cart table is owned by the cart service and only accessed through the shared
+// database, so the delete runs as raw SQL.
 func clearUserCart(userID uint) error {
-	return database.DB.Where("user_id = ?", userID).Delete(&struct {
-		TableName string `gorm:"-" sql:"cart_items"`
-	}{}).Error
+	return database.DB.Exec("DELETE FROM cart_items WHERE user_id = ?", userID).Error
 }

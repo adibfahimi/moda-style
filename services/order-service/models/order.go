@@ -1,3 +1,9 @@
+// Package models defines the order persistence types: the order header, its
+// line items and the payment transactions recorded against it.
+//
+// Orders and items are soft-deleted, and OrderItem keeps a snapshot of the
+// product name, size, colour and price so historic orders stay readable even
+// after the catalogue changes.
 package models
 
 import (
