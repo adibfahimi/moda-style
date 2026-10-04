@@ -1,3 +1,14 @@
+// Package handlers implements the HTTP surface of the auth service: account
+// registration, login, profile read/update and password-reset requests.
+//
+// Every handler follows the same contract:
+//
+//   - request bodies are decoded and validated with common.ParseAndValidate,
+//     which writes a 400 response on failure and reports it by returning false;
+//   - responses use the shared common.SendSuccessResponse /
+//     common.SendErrorResponse envelopes so all services fail identically;
+//   - authenticated handlers read the caller identity from the request Locals
+//     that common.RequireAuth populates ("userID", "email", "userName", "role").
 package handlers
 
 import (
@@ -12,12 +23,19 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
+// registerRequest is the JSON body accepted by Register.
 type registerRequest struct {
 	Email    string `json:"email" validate:"required,email"`
 	Password string `json:"password" validate:"required,min=6"`
 	Name     string `json:"name" validate:"required,min=2"`
 }
 
+// Register creates a new user account and returns a signed access token.
+//
+// The password is stored as a bcrypt hash only; the plaintext value never
+// reaches the database. An email that is already registered yields
+// 409 Conflict, invalid input yields 400 Bad Request, and success yields
+// 201 Created with the token plus the public fields of the created user.
 func Register(c *fiber.Ctx) error {
 	var req registerRequest
 
@@ -61,11 +79,17 @@ func Register(c *fiber.Ctx) error {
 	})
 }
 
+// loginRequest is the JSON body accepted by Login.
 type loginRequest struct {
 	Email    string `json:"email" validate:"required,email"`
 	Password string `json:"password" validate:"required,min=6"`
 }
 
+// Login authenticates an existing user and returns a signed access token.
+//
+// An unknown email and a wrong password both produce the same
+// 401 Unauthorized "Invalid email or password" response so the endpoint cannot
+// be used to enumerate registered accounts.
 func Login(c *fiber.Ctx) error {
 	var req loginRequest
 
@@ -99,7 +123,11 @@ func Login(c *fiber.Ctx) error {
 	})
 }
 
-// GetProfile returns the current user's profile data
+// GetProfile returns the profile of the authenticated user.
+//
+// The identity is read from the request Locals populated by common.RequireAuth,
+// so the route must be mounted behind that middleware. A missing identity
+// yields 401 Unauthorized and an unknown user 404 Not Found.
 func GetProfile(c *fiber.Ctx) error {
 	userID, ok := c.Locals("userID").(uint)
 	if !ok {
@@ -123,12 +151,20 @@ func GetProfile(c *fiber.Ctx) error {
 	})
 }
 
+// updateProfileRequest is the JSON body accepted by UpdateProfile.
+//
+// Both fields are optional pointers so an omitted field keeps its current value
+// while a present-but-invalid value is still rejected by the validator.
 type updateProfileRequest struct {
 	Name  *string `json:"name,omitempty" validate:"omitempty,min=2"`
 	Email *string `json:"email,omitempty" validate:"omitempty,email"`
 }
 
-// UpdateProfile updates the user's name, email, or preferences
+// UpdateProfile changes the name and/or email of the authenticated user.
+//
+// Only the fields present in the request body are written. Changing the email
+// to a value owned by another account yields 409 Conflict; the account's role
+// and password cannot be modified through this endpoint.
 func UpdateProfile(c *fiber.Ctx) error {
 	userID, ok := c.Locals("userID").(uint)
 	if !ok {
@@ -172,10 +208,19 @@ func UpdateProfile(c *fiber.Ctx) error {
 	})
 }
 
+// resetPasswordRequest is the JSON body accepted by ResetPassword.
 type resetPasswordRequest struct {
 	Email string `json:"email" validate:"required,email"`
 }
 
+// ResetPassword starts the password-reset flow for an email address.
+//
+// The response is the same 200 OK message whether or not the address belongs to
+// a real account, so the endpoint cannot be used to discover which emails are
+// registered. For a known account a random single-use token valid for one hour
+// is stored on the user record.
+//
+// TODO: deliver the token to the user by email instead of logging it to stdout.
 func ResetPassword(c *fiber.Ctx) error {
 	var req resetPasswordRequest
 	if !common.ParseAndValidate(c, &req) {
@@ -210,7 +255,8 @@ func ResetPassword(c *fiber.Ctx) error {
 	})
 }
 
-// generateResetToken creates a secure random token for password reset
+// generateResetToken returns a cryptographically secure password-reset token:
+// 32 random bytes from crypto/rand, hex encoded (64 characters).
 func generateResetToken() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
