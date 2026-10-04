@@ -144,12 +144,15 @@ make test          # run all Go tests
 make run-auth      # run the auth service locally (see Makefile for others)
 ```
 
-Frontend:
+Frontend (requires [Bun](https://bun.sh), the package manager used to produce
+`frontend/bun.lock`):
 
 ```bash
 cd frontend
-npm install
-npm run dev        # Vite dev server with HMR on http://localhost:5173
+bun install
+bun run dev        # Vite dev server with HMR on http://localhost:5173
+bun run test       # Vitest suite (single run)
+bun run typecheck  # tsc --build
 ```
 
 In development the frontend talks to the services directly on `localhost:800x`
@@ -272,14 +275,38 @@ Frontend build-time overrides (optional, see `frontend/src/config/api.ts`):
 ## Testing
 
 ```bash
-make test            # all Go tests (common + every service)
-make test-frontend   # Vitest suite for the SPA
-make test-cover      # Go coverage summary
+make test               # all Go tests (common + every service)
+make test-frontend      # Vitest suite for the SPA
+make typecheck-frontend # tsc --build for the SPA
+make test-cover         # Go coverage summary
+make check              # everything CI runs
 ```
+
+### Backend
 
 Go tests run without a running database: the handler tests boot an in‑memory,
 pure‑Go SQLite instance (`github.com/glebarez/sqlite`) so they are fast and
-hermetic. `JWT_SECRET` is injected by the tests themselves.
+hermetic. `JWT_SECRET` is injected by the tests themselves. Every HTTP handler
+is exercised end to end through `net/http/httptest`, including validation,
+authentication, and error branches.
+
+### Frontend
+
+The SPA is tested with [Vitest](https://vitest.dev) in a
+[jsdom](https://github.com/jsdom/jsdom) environment. Suites live next to the
+code they cover (`*.test.ts` / `*.test.tsx`) and are configured in
+`frontend/vite.config.ts`, with shared helpers in `frontend/src/test`:
+
+| Suite                             | Covers                                              |
+| --------------------------------- | --------------------------------------------------- |
+| `src/config/api.test.ts`          | Service URL resolution (env override, dev, origin)  |
+| `src/services/*.test.ts`          | Every service module: URLs, verbs, bodies, failures |
+| `src/components/admin/*.test.tsx` | `StatsCard`, `Pagination`, `Modal` via Solid Testing Library |
+
+Service modules are tested through a `fetch` stand-in (`installFetchMock`), so
+assertions cover the request that would go over the wire — method, path, query
+string, JSON body, bearer token — and the message surfaced to the UI when the
+backend fails. There is no network access and no database involved.
 
 ---
 

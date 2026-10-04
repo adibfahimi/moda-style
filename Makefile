@@ -9,7 +9,8 @@ GO_MODULES   := common services/auth-service services/product-service services/c
 FRONTEND_DIR := frontend
 
 .DEFAULT_GOAL := help
-.PHONY: help test test-common test-services test-cover test-frontend fmt vet tidy build \
+.PHONY: help test test-common test-services test-cover test-frontend typecheck-frontend \
+        install-frontend build-frontend check fmt vet tidy build \
         run-auth run-product run-cart run-order run-admin up down logs clean
 
 ## help: list available targets
@@ -39,7 +40,22 @@ test-cover:
 
 ## test-frontend: run the Vitest suite for the SPA
 test-frontend:
-	cd $(FRONTEND_DIR) && npm test
+	cd $(FRONTEND_DIR) && bun run test
+
+## typecheck-frontend: type-check the SPA with tsc
+typecheck-frontend:
+	cd $(FRONTEND_DIR) && bun run typecheck
+
+## build-frontend: produce the production SPA bundle into frontend/dist
+build-frontend:
+	cd $(FRONTEND_DIR) && bun run build
+
+## install-frontend: install SPA dependencies from the committed bun.lock
+install-frontend:
+	cd $(FRONTEND_DIR) && bun install --frozen-lockfile
+
+## check: run everything CI runs (vet, all Go tests, frontend types and tests)
+check: vet test test-frontend typecheck-frontend
 
 ## fmt: format all Go source with gofmt
 fmt:

@@ -1,0 +1,80 @@
+# Continuous integration for Moda Style.
+#
+# Runs on every push and pull request targeting the default branch. The Go job
+# exercises the full workspace (format check, vet, tests); the frontend job
+# installs from the committed Bun lockfile and type-checks, tests and builds
+# the SPA.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (Go)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache: true
+
+      - name: Verify gofmt
+        run: |
+          unformatted=$(gofmt -l common services)
+          if [ -n "$unformatted" ]; then
+            echo "The following files are not gofmt-formatted:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Download modules
+        run: |
+          for m in common services/auth-service services/product-service services/cart-service services/order-service services/admin-service; do
+            (cd "$m" && go mod download)
+          done
+
+      - name: Vet
+        run: make vet
+
+      - name: Test
+        run: make test-cover
+
+  frontend:
+    name: Frontend (SolidJS)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Type-check
+        run: bun run typecheck
+
+      - name: Test
+        run: bun run test
+
+      - name: Build
+        run: bun run build
