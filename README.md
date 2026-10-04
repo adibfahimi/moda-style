@@ -1,6 +1,7 @@
 # Moda Style
 
 [![CI](https://github.com/adibfahimi/moda-style/actions/workflows/ci.yml/badge.svg)](https://github.com/adibfahimi/moda-style/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Moda Style is a clothing e‑commerce platform built as a set of small, independent
 Go microservices behind an Nginx gateway, with a SolidJS single‑page application
@@ -319,5 +320,12 @@ backend fails. There is no network access and no database involved.
 
 ## License
 
-Copyright © Moda Style. All rights reserved.
+Released under the [MIT License](LICENSE).
+
+Copyright © 2026 Adib Fahimi.
+
+You are free to use, copy, modify, merge, publish, distribute, sublicense and
+sell this software, including commercially, provided the copyright notice and
+this permission notice stay with it. The software is provided "as is", without
+warranty of any kind.
 
