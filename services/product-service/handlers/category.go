@@ -7,7 +7,11 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// ListCategories returns all clothing categories
+// ListCategories returns every category with its parent preloaded.
+//
+// Rows are ordered roots-first (parent_id ascending, NULLs first) and then
+// alphabetically, so clients can render the tree without re-sorting. Deleted
+// categories are filtered out automatically by GORM's soft-delete scope.
 func ListCategories(c *fiber.Ctx) error {
 	var categories []models.Category
 	if err := database.DB.

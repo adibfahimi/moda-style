@@ -9,12 +9,20 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
+// CreateReviewRequest is the JSON body accepted by CreateReview.
+//
+// Rating is mandatory and must be between 1 and 5; Comment is mandatory and
+// between 10 and 1000 characters.
 type CreateReviewRequest struct {
 	Rating  int    `json:"rating" validate:"required,min=1,max=5"`
 	Comment string `json:"comment" validate:"required,min=10,max=1000"`
 }
 
-// GetProductReviews returns customer feedback for a product
+// GetProductReviews returns the paginated reviews of one product.
+//
+// It first verifies that the product exists (404 Not Found otherwise) and then
+// reports the unpaginated total together with the average rating so the client
+// can display a rating summary. Supports the page and limit query parameters.
 func GetProductReviews(c *fiber.Ctx) error {
 	productID := c.Params("id")
 
@@ -60,7 +68,12 @@ func GetProductReviews(c *fiber.Ctx) error {
 	})
 }
 
-// CreateReview submits a new review/rating for a product
+// CreateReview stores one review per user and product.
+//
+// The caller identity comes from common.RequireAuth: a missing identity yields
+// 401 Unauthorized, an unknown product 404 Not Found and a second review for the
+// same product 409 Conflict. The review stores the author's display name
+// (falling back to "Anonymous") so listing reviews needs no join.
 func CreateReview(c *fiber.Ctx) error {
 	productID := c.Params("id")
 

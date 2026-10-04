@@ -6,6 +6,12 @@ import (
 	"github.com/adibfahimi/moda-style/services/product-service/models"
 )
 
+// Migrate creates or updates the tables owned by the product service: the
+// category tree, products, size variants and reviews.
+//
+// It also drops the legacy unique indexes on categories.name and
+// categories.slug, which prevented two different parents from having children
+// with the same name. The process terminates when the schema cannot be applied.
 func Migrate() {
 	err := DB.AutoMigrate(
 		&models.Category{},
