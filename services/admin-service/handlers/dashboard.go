@@ -50,12 +50,13 @@ func GetRecentActivity(c *fiber.Ctx) error {
 		limit = 100
 	}
 
-	var activities []models.RecentActivity
+	// Initialised (not nil) so an empty result serialises as [] rather than null.
+	activities := []models.RecentActivity{}
 
 	// Get recent user registrations
 	var userActivities []models.RecentActivity
 	database.DB.Table("users").
-		Select("id, 'user_registered' as type, CONCAT('New user registered: ', name) as description, id as user_id, name as user_name, created_at").
+		Select("id, 'user_registered' as type, 'New user registered: ' || name as description, id as user_id, name as user_name, created_at").
 		Where("deleted_at IS NULL").
 		Order("created_at DESC").
 		Limit(limit / 4).
@@ -66,7 +67,7 @@ func GetRecentActivity(c *fiber.Ctx) error {
 	// Get recent product additions
 	var productActivities []models.RecentActivity
 	database.DB.Table("products").
-		Select("id, 'product_created' as type, CONCAT('New product added: ', name) as description, NULL as user_id, '' as user_name, created_at").
+		Select("id, 'product_created' as type, 'New product added: ' || name as description, NULL as user_id, '' as user_name, created_at").
 		Where("deleted_at IS NULL").
 		Order("created_at DESC").
 		Limit(limit / 4).
@@ -77,7 +78,7 @@ func GetRecentActivity(c *fiber.Ctx) error {
 	// Get recent reviews
 	var reviewActivities []models.RecentActivity
 	database.DB.Table("reviews").
-		Select("reviews.id, 'review_added' as type, CONCAT(reviews.user_name, ' reviewed a product (', reviews.rating, ' stars)') as description, reviews.user_id, reviews.user_name, reviews.created_at").
+		Select("reviews.id, 'review_added' as type, reviews.user_name || ' reviewed a product (' || reviews.rating || ' stars)' as description, reviews.user_id, reviews.user_name, reviews.created_at").
 		Where("reviews.deleted_at IS NULL").
 		Order("reviews.created_at DESC").
 		Limit(limit / 2).
@@ -103,7 +104,8 @@ func GetActivityLogs(c *fiber.Ctx) error {
 	}
 	offset := (page - 1) * limit
 
-	var logs []models.ActivityLog
+	// Initialised (not nil) so an empty result serialises as [] rather than null.
+	var logs []models.ActivityLog = []models.ActivityLog{}
 	var total int64
 
 	query := database.DB.Model(&models.ActivityLog{})

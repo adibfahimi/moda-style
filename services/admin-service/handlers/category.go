@@ -3,6 +3,7 @@ package handlers
 import (
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/adibfahimi/moda-style/common"
 	"github.com/adibfahimi/moda-style/services/admin-service/database"
@@ -29,7 +30,8 @@ func GetCategories(c *fiber.Ctx) error {
 		CreatedAt    string `json:"created_at"`
 	}
 
-	var categories []CategoryWithCount
+	// Initialised (not nil) so an empty result serialises as [] rather than null.
+	categories := []CategoryWithCount{}
 
 	database.DB.Table("categories").
 		Select(`
@@ -188,8 +190,16 @@ func UpdateCategory(c *fiber.Ctx) error {
 		return common.SendErrorResponse(c, fiber.StatusConflict, "Category with this name or slug already exists under the selected parent")
 	}
 
-	// Update category
-	if err := database.DB.Table("categories").Where("id = ?", id).Updates(&req).Error; err != nil {
+	// Update category. An explicit column map is used so that clearing the
+	// parent (a nil ParentID) is actually persisted — Updates with a struct
+	// skips zero values.
+	updates := map[string]interface{}{
+		"name":      req.Name,
+		"slug":      req.Slug,
+		"parent_id": req.ParentID,
+	}
+
+	if err := database.DB.Table("categories").Where("id = ?", id).Updates(updates).Error; err != nil {
 		return common.SendErrorResponse(c, fiber.StatusInternalServerError, "Failed to update category")
 	}
 
@@ -212,13 +222,18 @@ func DeleteCategory(c *fiber.Ctx) error {
 	}
 
 	// Check if category exists
-	var categoryName string
+	var names []string
 	if err := database.DB.Table("categories").
 		Select("name").
 		Where("id = ? AND deleted_at IS NULL", id).
-		Scan(&categoryName).Error; err != nil {
+		Limit(1).
+		Find(&names).Error; err != nil {
+		return common.SendErrorResponse(c, fiber.StatusInternalServerError, "Failed to fetch category")
+	}
+	if len(names) == 0 {
 		return common.SendErrorResponse(c, fiber.StatusNotFound, "Category not found")
 	}
+	categoryName := names[0]
 
 	// Check if category has products
 	var productCount int64
@@ -240,8 +255,9 @@ func DeleteCategory(c *fiber.Ctx) error {
 		return common.SendErrorResponse(c, fiber.StatusBadRequest, "Cannot delete category with child categories")
 	}
 
-	// Soft delete category
-	if err := database.DB.Table("categories").Where("id = ?", id).Update("deleted_at", "NOW()").Error; err != nil {
+	// Soft delete category. A bound timestamp keeps the query portable between
+	// PostgreSQL and SQLite.
+	if err := database.DB.Table("categories").Where("id = ?", id).Update("deleted_at", time.Now()).Error; err != nil {
 		return common.SendErrorResponse(c, fiber.StatusInternalServerError, "Failed to delete category")
 	}
 

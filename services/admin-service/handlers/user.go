@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"strconv"
+	"time"
 
 	"github.com/adibfahimi/moda-style/common"
 	"github.com/adibfahimi/moda-style/services/admin-service/database"
@@ -30,7 +31,8 @@ func GetUsers(c *fiber.Ctx) error {
 	role := c.Query("role")
 	search := c.Query("search")
 
-	var users []models.UserStats
+	// Initialised (not nil) so an empty result serialises as [] rather than null.
+	users := []models.UserStats{}
 	var total int64
 
 	query := database.DB.Table("users").
@@ -54,7 +56,9 @@ func GetUsers(c *fiber.Ctx) error {
 	}
 
 	if search != "" {
-		query = query.Where("users.name ILIKE ? OR users.email ILIKE ?", "%"+search+"%", "%"+search+"%")
+		// LOWER()/LIKE keeps the search case-insensitive on both PostgreSQL and
+		// SQLite, unlike the PostgreSQL-only ILIKE operator.
+		query = query.Where("LOWER(users.name) LIKE LOWER(?) OR LOWER(users.email) LIKE LOWER(?)", "%"+search+"%", "%"+search+"%")
 	}
 
 	// Count total with filters
@@ -63,7 +67,7 @@ func GetUsers(c *fiber.Ctx) error {
 		countQuery = countQuery.Where("role = ?", role)
 	}
 	if search != "" {
-		countQuery = countQuery.Where("name ILIKE ? OR email ILIKE ?", "%"+search+"%", "%"+search+"%")
+		countQuery = countQuery.Where("LOWER(name) LIKE LOWER(?) OR LOWER(email) LIKE LOWER(?)", "%"+search+"%", "%"+search+"%")
 	}
 	countQuery.Count(&total)
 
@@ -89,7 +93,7 @@ func GetUserDetails(c *fiber.Ctx) error {
 		return common.SendErrorResponse(c, fiber.StatusBadRequest, "Invalid user ID")
 	}
 
-	var user models.UserStats
+	var users []models.UserStats
 
 	if err := database.DB.Table("users").
 		Select(`
@@ -106,9 +110,15 @@ func GetUserDetails(c *fiber.Ctx) error {
 		Joins("LEFT JOIN wishlist_items ON users.id = wishlist_items.user_id AND wishlist_items.deleted_at IS NULL").
 		Where("users.id = ? AND users.deleted_at IS NULL", id).
 		Group("users.id").
-		Scan(&user).Error; err != nil {
+		Find(&users).Error; err != nil {
+		return common.SendErrorResponse(c, fiber.StatusInternalServerError, "Failed to fetch user")
+	}
+
+	// Find/Scan never report a missing row, so an empty result is the 404 case.
+	if len(users) == 0 {
 		return common.SendErrorResponse(c, fiber.StatusNotFound, "User not found")
 	}
+	user := users[0]
 
 	// Get user's recent reviews
 	type ReviewInfo struct {
@@ -148,10 +158,14 @@ func UpdateUser(c *fiber.Ctx) error {
 	}
 
 	// Check if user exists
-	var existingUser User
-	if err := database.DB.Table("users").Where("id = ? AND deleted_at IS NULL", id).Scan(&existingUser).Error; err != nil {
+	var existingUsers []User
+	if err := database.DB.Table("users").Where("id = ? AND deleted_at IS NULL", id).Limit(1).Find(&existingUsers).Error; err != nil {
+		return common.SendErrorResponse(c, fiber.StatusInternalServerError, "Failed to fetch user")
+	}
+	if len(existingUsers) == 0 {
 		return common.SendErrorResponse(c, fiber.StatusNotFound, "User not found")
 	}
+	existingUser := existingUsers[0]
 
 	// Check if email is already taken by another user
 	if req.Email != "" && req.Email != existingUser.Email {
@@ -200,13 +214,18 @@ func DeleteUser(c *fiber.Ctx) error {
 	}
 
 	// Check if user exists
-	var userName string
+	var names []string
 	if err := database.DB.Table("users").
 		Select("name").
 		Where("id = ? AND deleted_at IS NULL", id).
-		Scan(&userName).Error; err != nil {
+		Limit(1).
+		Find(&names).Error; err != nil {
+		return common.SendErrorResponse(c, fiber.StatusInternalServerError, "Failed to fetch user")
+	}
+	if len(names) == 0 {
 		return common.SendErrorResponse(c, fiber.StatusNotFound, "User not found")
 	}
+	userName := names[0]
 
 	// Prevent deleting yourself
 	currentUserID := c.Locals("userID").(uint)
@@ -215,7 +234,7 @@ func DeleteUser(c *fiber.Ctx) error {
 	}
 
 	// Soft delete user
-	if err := database.DB.Table("users").Where("id = ?", id).Update("deleted_at", "NOW()").Error; err != nil {
+	if err := database.DB.Table("users").Where("id = ?", id).Update("deleted_at", time.Now()).Error; err != nil {
 		return common.SendErrorResponse(c, fiber.StatusInternalServerError, "Failed to delete user")
 	}
 
@@ -237,16 +256,14 @@ func BanUser(c *fiber.Ctx) error {
 	}
 
 	// Check if user exists and get details
-	var user struct {
-		Name   string `json:"name"`
-		Banned bool   `json:"banned"`
+	banStates, err := loadBanStates(id)
+	if err != nil {
+		return common.SendErrorResponse(c, fiber.StatusInternalServerError, "Failed to fetch user")
 	}
-	if err := database.DB.Table("users").
-		Select("name, banned").
-		Where("id = ? AND deleted_at IS NULL", id).
-		Scan(&user).Error; err != nil {
+	if len(banStates) == 0 {
 		return common.SendErrorResponse(c, fiber.StatusNotFound, "User not found")
 	}
+	user := banStates[0]
 
 	// Prevent banning yourself
 	currentUserID := c.Locals("userID").(uint)
@@ -282,16 +299,14 @@ func UnbanUser(c *fiber.Ctx) error {
 	}
 
 	// Check if user exists and get details
-	var user struct {
-		Name   string `json:"name"`
-		Banned bool   `json:"banned"`
+	banStates, err := loadBanStates(id)
+	if err != nil {
+		return common.SendErrorResponse(c, fiber.StatusInternalServerError, "Failed to fetch user")
 	}
-	if err := database.DB.Table("users").
-		Select("name, banned").
-		Where("id = ? AND deleted_at IS NULL", id).
-		Scan(&user).Error; err != nil {
+	if len(banStates) == 0 {
 		return common.SendErrorResponse(c, fiber.StatusNotFound, "User not found")
 	}
+	user := banStates[0]
 
 	// Check if not banned
 	if !user.Banned {
@@ -311,6 +326,28 @@ func UnbanUser(c *fiber.Ctx) error {
 	return common.SendSuccessResponse(c, fiber.StatusOK, fiber.Map{
 		"message": "User unbanned successfully",
 	})
+}
+
+// banState is the minimal user projection BanUser and UnbanUser need.
+type banState struct {
+	Name   string `json:"name"`
+	Banned bool   `json:"banned"`
+}
+
+// loadBanStates reads the name/banned columns of one user.
+//
+// It returns an empty slice when the user does not exist, which callers turn
+// into a 404. Find is used instead of Scan because Scan does not report a
+// missing row as an error, which previously made every mutation succeed for
+// arbitrary IDs.
+func loadBanStates(id uint64) ([]banState, error) {
+	var states []banState
+	err := database.DB.Table("users").
+		Select("name, banned").
+		Where("id = ? AND deleted_at IS NULL", id).
+		Limit(1).
+		Find(&states).Error
+	return states, err
 }
 
 // GetUserAnalytics returns user-related analytics
@@ -340,9 +377,11 @@ func GetUserAnalytics(c *fiber.Ctx) error {
 		Where("DATE(created_at) = CURRENT_DATE AND deleted_at IS NULL").
 		Count(&analytics.NewUsersToday)
 
-	// New users this week
+	// New users this week. Using a bound timestamp instead of an
+	// INTERVAL/CURRENT_DATE expression keeps the query portable between
+	// PostgreSQL and SQLite.
 	database.DB.Table("users").
-		Where("created_at >= CURRENT_DATE - INTERVAL '7 days' AND deleted_at IS NULL").
+		Where("created_at >= ? AND deleted_at IS NULL", time.Now().AddDate(0, 0, -7)).
 		Count(&analytics.NewUsersThisWeek)
 
 	// Active reviewers (users with at least one review)

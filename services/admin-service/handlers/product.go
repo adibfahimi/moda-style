@@ -261,16 +261,23 @@ func DeleteProduct(c *fiber.Ctx) error {
 	}
 
 	// Check if product exists
-	var productName string
+	var names []string
 	if err := database.DB.Table("products").
 		Select("name").
 		Where("id = ? AND deleted_at IS NULL", id).
-		Scan(&productName).Error; err != nil {
+		Limit(1).
+		Find(&names).Error; err != nil {
+		return common.SendErrorResponse(c, fiber.StatusInternalServerError, "Failed to fetch product")
+	}
+	if len(names) == 0 {
 		return common.SendErrorResponse(c, fiber.StatusNotFound, "Product not found")
 	}
+	productName := names[0]
 
-	// Soft delete product
-	if err := database.DB.Table("products").Where("id = ?", id).Update("deleted_at", "NOW()").Error; err != nil {
+	// Soft delete product. A bound timestamp keeps the query portable between
+	// PostgreSQL and SQLite (a literal "NOW()" string is not a valid timestamp
+	// for either driver).
+	if err := database.DB.Table("products").Where("id = ?", id).Update("deleted_at", time.Now()).Error; err != nil {
 		return common.SendErrorResponse(c, fiber.StatusInternalServerError, "Failed to delete product")
 	}
 
@@ -307,13 +314,18 @@ func GetProductStats(c *fiber.Ctx) error {
 		WishlistCount int64   `json:"wishlist_count"`
 	}
 
-	var products []ProductStat
+	// Initialised (not nil) so an empty result serialises as [] rather than null.
+	products := []ProductStat{}
 	var total int64
 
 	// Count total products
 	database.DB.Table("products").Where("deleted_at IS NULL").Count(&total)
 
-	// Get product stats with joins
+	// Get product stats with joins.
+	//
+	// Stock comes from a correlated subquery: joining sizes alongside the
+	// one-to-many reviews/wishlist_items would multiply the stock sum by the
+	// number of matching rows.
 	database.DB.Table("products").
 		Select(`
 			products.id,
@@ -323,13 +335,15 @@ func GetProductStats(c *fiber.Ctx) error {
 			categories.name as category_name,
 			products.price,
 			products.image_url,
-			COALESCE(SUM(sizes.stock), 0) as stock,
+			COALESCE((
+				SELECT SUM(sizes.stock) FROM sizes
+				WHERE sizes.product_id = products.id AND sizes.deleted_at IS NULL
+			), 0) as stock,
 			COUNT(DISTINCT reviews.id) as review_count,
 			COALESCE(AVG(reviews.rating), 0) as average_rating,
 			COUNT(DISTINCT wishlist_items.id) as wishlist_count
 		`).
 		Joins("LEFT JOIN categories ON products.category_id = categories.id").
-		Joins("LEFT JOIN sizes ON products.id = sizes.product_id AND sizes.deleted_at IS NULL").
 		Joins("LEFT JOIN reviews ON products.id = reviews.product_id AND reviews.deleted_at IS NULL").
 		Joins("LEFT JOIN wishlist_items ON products.id = wishlist_items.product_id AND wishlist_items.deleted_at IS NULL").
 		Where("products.deleted_at IS NULL").
@@ -365,7 +379,8 @@ func GetProductSizes(c *fiber.Ctx) error {
 		return common.SendErrorResponse(c, fiber.StatusNotFound, "Product not found")
 	}
 
-	var sizes []Size
+	// Initialised (not nil) so an empty result serialises as [] rather than null.
+	sizes := []Size{}
 	if err := database.DB.Table("sizes").
 		Where("product_id = ? AND deleted_at IS NULL", productID).
 		Order("id ASC").
@@ -477,8 +492,9 @@ func DeleteProductSize(c *fiber.Ctx) error {
 		return common.SendErrorResponse(c, fiber.StatusNotFound, "Size not found")
 	}
 
-	// Delete size
-	if err := database.DB.Table("sizes").Where("id = ?", sizeID).Update("deleted_at", "NOW()").Error; err != nil {
+	// Delete size. A bound timestamp keeps the query portable between
+	// PostgreSQL and SQLite.
+	if err := database.DB.Table("sizes").Where("id = ?", sizeID).Update("deleted_at", time.Now()).Error; err != nil {
 		return common.SendErrorResponse(c, fiber.StatusInternalServerError, "Failed to delete size")
 	}
 

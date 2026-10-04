@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/adibfahimi/moda-style/common"
 	"github.com/adibfahimi/moda-style/services/admin-service/database"
@@ -84,7 +85,8 @@ func GetOrders(c *fiber.Ctx) error {
 	query += " GROUP BY o.id, u.name, u.email ORDER BY o.created_at DESC LIMIT ? OFFSET ?"
 	args = append(args, limit, offset)
 
-	var orders []models.OrderStats
+	// Initialised (not nil) so an empty result serialises as [] rather than null.
+	orders := []models.OrderStats{}
 	if err := database.DB.Raw(query, args...).Scan(&orders).Error; err != nil {
 		return common.SendErrorResponse(c, fiber.StatusInternalServerError, "Failed to fetch orders")
 	}
@@ -273,10 +275,12 @@ func GetOrderAnalytics(c *fiber.Ctx) error {
 	database.DB.Model(&models.Order{}).Where("payment_status = ?", "pending").Select("COALESCE(SUM(total_amount), 0)").Scan(&analytics.PendingRevenue)
 	database.DB.Model(&models.Order{}).Where("payment_status = ?", "paid").Select("COALESCE(SUM(total_amount), 0)").Scan(&analytics.PaidRevenue)
 
-	// Orders by time period
+	// Orders by time period. Bound timestamps keep the queries portable between
+	// PostgreSQL and SQLite (INTERVAL is PostgreSQL-only).
+	now := time.Now()
 	database.DB.Model(&models.Order{}).Where("DATE(created_at) = CURRENT_DATE").Count(&analytics.OrdersToday)
-	database.DB.Model(&models.Order{}).Where("created_at >= NOW() - INTERVAL '7 days'").Count(&analytics.OrdersThisWeek)
-	database.DB.Model(&models.Order{}).Where("created_at >= NOW() - INTERVAL '30 days'").Count(&analytics.OrdersThisMonth)
+	database.DB.Model(&models.Order{}).Where("created_at >= ?", now.AddDate(0, 0, -7)).Count(&analytics.OrdersThisWeek)
+	database.DB.Model(&models.Order{}).Where("created_at >= ?", now.AddDate(0, 0, -30)).Count(&analytics.OrdersThisMonth)
 
 	return common.SendSuccessResponse(c, fiber.StatusOK, fiber.Map{
 		"analytics": analytics,
